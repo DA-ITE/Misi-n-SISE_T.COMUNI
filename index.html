@@ -1063,9 +1063,8 @@ body:before{background-image:radial-gradient(rgba(15,23,42,.07) 1px, transparent
       <div class="eyebrow">Instituto SISE</div>
       <h2>Iniciar partida</h2>
       <p>Ingresa con tus datos para crear o recuperar tu progreso y continuar exactamente desde la última sala que dejaste.</p>
-      <div class="field"><label>Nombre(s)</label><input id="firstName" required placeholder="Escribe tu nombre"></div>
-      <div class="field"><label>Apellido(s)</label><input id="lastName" required placeholder="Escribe tu apellido"></div>
-      <div class="field"><label>Correo</label><input id="email" type="email" required placeholder="nombre@correo.com"></div>
+      <div class="field"><label>Nombres y apellidos</label><input id="fullName" required autocomplete="name" placeholder="Escribe tus nombres y apellidos"></div>
+      <div class="field"><label>ID de estudiante</label><input id="studentId" required autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Escribe tu ID de estudiante"></div>
       <div class="field"><label>Curso</label><input id="career" value="T. de Com. Ef. y Res. de Conf." readonly aria-readonly="true" style="opacity:.85;cursor:default"></div>
       <div class="field" id="teacherField"><label>Docente</label><select id="teacher" required><option value="">Selecciona tu docente</option></select></div>
       <div class="field" id="sectionField"><label>Sección</label><select id="section" required disabled><option value="">Primero selecciona tu docente</option></select></div>
@@ -1404,7 +1403,7 @@ const MINIGAMES=[
 
 const STORE='mision_comef_v1';
 const N=STATIONS.length;
-let currentEmail='';
+let currentId='';
 let state=null;
 let activeId=null;
 let soundOn=true;
@@ -1417,7 +1416,7 @@ const toast=(msg)=>{const t=$('#toast');t.textContent=msg;t.classList.add('show'
 const nowLabel=()=>new Date().toLocaleString('es-PE',{dateStyle:'short',timeStyle:'short'});
 const norm=v=>(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,'').toUpperCase();
 const loadAll=()=>{try{return JSON.parse(localStorage.getItem(STORE)||'{}')}catch{return {}}};
-function save(){const all=loadAll();all[currentEmail]=state;localStorage.setItem(STORE,JSON.stringify(all));localStorage.setItem(STORE+'_last',currentEmail)}
+function save(){const all=loadAll();all[currentId]=state;localStorage.setItem(STORE,JSON.stringify(all));localStorage.setItem(STORE+'_last',currentId)}
 function log(title,detail){state.history.unshift({time:nowLabel(),title,detail}); if(state.history.length>120) state.history.length=120; save();}
 function fresh(profile){const z=()=>STATIONS.map(()=>false);return{profile,keys:z(),rooms:z(),reviewed:z(),miniWon:z(),history:[{time:nowLabel(),title:'Partida iniciada',detail:`Se creó una nueva misión de ${N} salas.`}],final:false,finalAnswers:{pitch:'',profile:'',unexpected:'',commitment:''}}}
 function keyCount(){return state.keys.filter(Boolean).length}
@@ -1482,10 +1481,26 @@ const AudioGame={
 
 $('#loginForm').addEventListener('submit',e=>{
   e.preventDefault();
-  const profile={firstName:$('#firstName').value.trim(),lastName:$('#lastName').value.trim(),email:$('#email').value.trim().toLowerCase(),career:'T. de Com. Ef. y Res. de Conf.',teacher:$('#teacher').value.trim(),section:$('#section').value.trim().toUpperCase()};
-  currentEmail=profile.email;
-  const all=loadAll();
-  if(all[currentEmail]){state=all[currentEmail]; state.profile={...state.profile,...profile}; log('Sesión reanudada','Retomaste tu partida guardada.');}
+  const fullName=$('#fullName').value.trim().replace(/\s+/g,' ');
+  const studentId=$('#studentId').value.replace(/\s+/g,'').toUpperCase();
+  if(!fullName||!studentId){toast('Completa tus nombres y apellidos y tu ID de estudiante.');return;}
+  const profile={fullName,firstName:fullName.split(' ')[0],studentId,career:'T. de Com. Ef. y Res. de Conf.',teacher:$('#teacher').value.trim(),section:$('#section').value.trim().toUpperCase()};
+  currentId=studentId; $('#studentId').value=studentId;
+  let all=loadAll();
+  /* Migración: partidas creadas antes con correo. Si en este equipo hay una partida
+     guardada con correo y el mismo nombre completo, pasa a la llave del ID de estudiante. */
+  if(!all[currentId]){
+    const nameKey=v=>(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim().toUpperCase();
+    const target=nameKey(fullName);
+    const oldKey=Object.keys(all).find(k=>k.includes('@')&&all[k]&&all[k].profile&&nameKey((all[k].profile.firstName||'')+' '+(all[k].profile.lastName||''))===target);
+    if(oldKey){
+      all[currentId]=all[oldKey];delete all[oldKey];
+      try{localStorage.setItem(STORE,JSON.stringify(all))}catch(e){}
+      try{const QK='mision_sync_events_v1',q=JSON.parse(localStorage.getItem(QK)||'{}');if(q[oldKey]){q[currentId]=q[oldKey];delete q[oldKey];localStorage.setItem(QK,JSON.stringify(q))}}catch(e){}
+      all=loadAll();
+    }
+  }
+  if(all[currentId]){state=all[currentId]; const old=state.profile||{}; state.profile={...profile,legacyEmail:old.email||old.legacyEmail||undefined}; log('Sesión reanudada','Retomaste tu partida guardada.');}
   else {state=fresh(profile); save();}
   AudioGame.login();
   AudioGame.startMusic();
@@ -1497,7 +1512,7 @@ $('#loginForm').addEventListener('submit',e=>{
 function render(){
   const next=nextStation();
   const p=state.profile;
-  $('#studentLabel').textContent=`${p.firstName}`;
+  $('#studentLabel').textContent=`${p.firstName||(p.fullName||'').split(' ')[0]||''}`;
   $('#xpLabel').textContent=`${xp()} / 800 XP`;
   $('#levelLabel').textContent=`Nivel ${level()}`;
   $('#xpFill').style.width=Math.min(100,(xp()/800)*100)+'%';
@@ -1928,36 +1943,38 @@ $('#supportProgress').addEventListener('click',()=>{window.scrollTo({top:0,behav
 $('#supportClose').addEventListener('click',()=>{$('#supportNpc').classList.add('hidden-guide'); $('#supportReopen').classList.remove('hidden');});
 $('#supportReopen').addEventListener('click',()=>{$('#supportNpc').classList.remove('hidden-guide'); $('#supportReopen').classList.add('hidden'); setSupport(supportMessage,supportMood);});
 
-window.addEventListener('DOMContentLoaded',()=>{const last=localStorage.getItem(STORE+'_last'); if(last) $('#email').value=last; const saved=Number(localStorage.getItem('nova_master_volume')); const pct=Number.isFinite(saved)&&saved>=0?Math.round(saved*100):70; $('#volumeControl').value=pct; $('#volumeLabel').textContent=pct+'%';});
+window.addEventListener('DOMContentLoaded',()=>{const last=localStorage.getItem(STORE+'_last'); if(last&&!last.includes('@')) $('#studentId').value=last; const saved=Number(localStorage.getItem('nova_master_volume')); const pct=Number.isFinite(saved)&&saved>=0?Math.round(saved*100):70; $('#volumeControl').value=pct; $('#volumeLabel').textContent=pct+'%';});
 </script>
 
 <script>
 /* ===== Conexión con el panel docente (Apps Script) ===== */
 /* CONFIGURACIÓN: URL /exec del Apps Script de ESTE curso (no la de MAE) */
-const MS_CONFIG={endpoint:'https://script.google.com/macros/s/AKfycbwR1EYQJReRa8bXnGwwJgeIkWjb9zJq-HGCEmbvCOWBEfdJWx8wq-nhtAPLSkJrlsFc/exec',token:'COMEF-SISE-2026'};
+/* Envío en línea DESACTIVADO: el destino anterior era un servicio fuera del tenant institucional.
+   Se reconecta cuando exista un destino en Microsoft 365 o el VB de Legal y Seguridad de la Información (Ley 29733). */
+const MS_CONFIG={endpoint:'',token:'COMEF-SISE-2026'};
 window.MS_SYNC=(()=>{
   const ready=()=>/^https:\/\/script\.google\.com\/macros\/s\//.test(MS_CONFIG.endpoint);
   const QK='mision_comef_sync_v1';
   let timer=null,pendingLogin=false;
   const readQ=()=>{try{return JSON.parse(localStorage.getItem(QK)||'{}')}catch(e){return {}}};
   const writeQ=q=>{try{localStorage.setItem(QK,JSON.stringify(q))}catch(e){}};
-  function queueEvent(ev){if(!currentEmail)return;const q=readQ();(q[currentEmail]=q[currentEmail]||[]).push(ev);q[currentEmail]=q[currentEmail].slice(-40);writeQ(q)}
-  function payload(){const q=readQ(),evs=q[currentEmail]||[];return {evs,body:{action:'progress',token:MS_CONFIG.token,login:pendingLogin,profile:state.profile,
+  function queueEvent(ev){if(!currentId)return;const q=readQ();(q[currentId]=q[currentId]||[]).push(ev);q[currentId]=q[currentId].slice(-40);writeQ(q)}
+  function payload(){const q=readQ(),evs=q[currentId]||[];return {evs,body:{action:'progress',token:MS_CONFIG.token,login:pendingLogin,profile:state.profile,
     state:{keys:state.keys,rooms:state.rooms,reviewed:state.reviewed,miniWon:state.miniWon,final:!!state.final},events:evs}}}
   async function push(){
-    if(!ready()||!state||!currentEmail)return;
+    if(!ready()||!state||!currentId)return;
     const {evs,body}=payload();
     try{
       const r=await fetch(MS_CONFIG.endpoint,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body),redirect:'follow'});
       const j=await r.json();if(!j.ok)throw new Error(j.error||'Error');
-      pendingLogin=false;const q=readQ();q[currentEmail]=(q[currentEmail]||[]).slice(evs.length);writeQ(q);
+      pendingLogin=false;const q=readQ();q[currentId]=(q[currentId]||[]).slice(evs.length);writeQ(q);
     }catch(e){console.warn('Misión SISE: el avance se enviará en el próximo intento.',e)}
   }
   function schedule(){if(!ready())return;clearTimeout(timer);timer=setTimeout(push,2000)}
   async function onLogin(){
     pendingLogin=true;
     if(ready()){try{
-      const u=MS_CONFIG.endpoint+'?action=progress&token='+encodeURIComponent(MS_CONFIG.token)+'&email='+encodeURIComponent(currentEmail);
+      const u=MS_CONFIG.endpoint+'?action=progress&token='+encodeURIComponent(MS_CONFIG.token)+'&studentId='+encodeURIComponent(currentId);
       const j=await (await fetch(u,{redirect:'follow'})).json();
       if(j.ok&&j.found&&j.state){let changed=false;['keys','rooms','reviewed','miniWon'].forEach(k=>{(j.state[k]||[]).forEach((v,i)=>{if(v&&!state[k][i]){state[k][i]=true;changed=true}})});
         if(j.state.final&&!state.final){state.final=true;changed=true}
@@ -1972,13 +1989,13 @@ window.MS_SYNC=(()=>{
   const _save=save,_log=log;
   save=function(){_save.apply(this,arguments);MS_SYNC.schedule()};
   log=function(title,detail){_log.apply(this,arguments);MS_SYNC.queueEvent({time:nowLabel(),title,detail})};
-  const flush=()=>{if(state&&currentEmail&&MS_SYNC.ready())MS_SYNC.push()};
+  const flush=()=>{if(state&&currentId&&MS_SYNC.ready())MS_SYNC.push()};
   document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')flush()});
   window.addEventListener('online',flush);
   $('#logoutBtn').addEventListener('click',flush);
   /* Docentes y secciones: se leen de la pestaña Docentes del Apps Script (nunca se envían claves).
      Si prefieres fijarlas aquí, completa SECCIONES con pares ['SECCIÓN','Docente']. */
-  const SECCIONES=[['1L','Orellana Yupanqui, Leoncio Omar'],['1P','Curotto Montoya, Julio Cesar'],['1R','Ramon Vitteri, Monica'],['1R2','Cuti Ruiz, Tatiana'],['1R3','Bernabe Franco, Magna Carlota'],['1R6','Chuquizuta Infantes, Marco Antonio'],['1S','Cuti Ruiz, Tatiana'],['1S1','Orellana Yupanqui, Leoncio Omar'],['1T','Ramon Vitteri, Monica'],['1V','Salvador Escobar, Jony Eduardo']];
+  const SECCIONES=[['1L','Orellana Yupanqui, Leoncio Omar'],['1P','Curotto Montoya, Julio Cesar'],['1R','Ramon Vitteri, Monica'],['1R2','Cuti Ruiz, Tatiana'],['1R3','Bernabe Franco, Magna Carlota'],['1R6','Chuquizuta Infantes, Marco Antonio'],['1S','Cuti Ruiz, Tatiana'],['1S1','Orellana Yupanqui, Leoncio Omar'],['1T','Ramon Vitteri, Monica'],['1V','Suarez Villalta, Pablo Francisco']];
   const tSel=$('#teacher'),sSel=$('#section');
   let LIST=[];
   function toText(){ /* Sin catálogo disponible: el estudiante escribe docente y sección */
