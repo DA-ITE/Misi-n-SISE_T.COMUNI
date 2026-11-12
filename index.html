@@ -1484,7 +1484,7 @@ $('#loginForm').addEventListener('submit',e=>{
   const fullName=$('#fullName').value.trim().replace(/\s+/g,' ');
   const studentId=$('#studentId').value.replace(/\s+/g,'').toUpperCase();
   if(!fullName||!studentId){toast('Completa tus nombres y apellidos y tu ID de estudiante.');return;}
-  const profile={fullName,firstName:fullName.split(' ')[0],studentId,career:'T. de Com. Ef. y Res. de Conf.',teacher:$('#teacher').value.trim(),section:$('#section').value.trim().toUpperCase()};
+  const parts=fullName.trim().split(/\s+/); const profile={fullName,firstName:parts[0]||'',lastName:parts.slice(1).join(' '),studentId,career:'T. de Com. Ef. y Res. de Conf.',teacher:$('#teacher').value.trim(),section:$('#section').value.trim().toUpperCase()};
   currentId=studentId; $('#studentId').value=studentId;
   let all=loadAll();
   /* Migración: partidas creadas antes con correo. Si en este equipo hay una partida
@@ -1949,9 +1949,8 @@ window.addEventListener('DOMContentLoaded',()=>{const last=localStorage.getItem(
 <script>
 /* ===== Conexión con el panel docente (Apps Script) ===== */
 /* CONFIGURACIÓN: URL /exec del Apps Script de ESTE curso (no la de MAE) */
-/* Envío en línea DESACTIVADO: el destino anterior era un servicio fuera del tenant institucional.
-   Se reconecta cuando exista un destino en Microsoft 365 o el VB de Legal y Seguridad de la Información (Ley 29733). */
-const MS_CONFIG={endpoint:'',token:'COMEF-SISE-2026'};
+/* Sincronización institucional activa con el Apps Script de Misión SISE. */
+const MS_CONFIG={endpoint:'https://script.google.com/macros/s/AKfycbwR1EYQJReRa8bXnGwwJgeIkWjb9zJq-HGCEmbvCOWBEfdJWx8wq-nhtAPLSkJrlsFc/exec',token:'COMEF-SISE-2026'};
 window.MS_SYNC=(()=>{
   const ready=()=>/^https:\/\/script\.google\.com\/macros\/s\//.test(MS_CONFIG.endpoint);
   const QK='mision_comef_sync_v1';
